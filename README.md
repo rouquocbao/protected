@@ -26,7 +26,7 @@ A1. Tạo driver kernel
 drivers/android/onechanger_guard.c
 
 Mã nguồn
-```
+```c
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/kobject.h>
