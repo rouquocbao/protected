@@ -26,7 +26,7 @@ A1. Tạo driver kernel
 drivers/android/onechanger_guard.c
 
 Mã nguồn
-///
+```
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/kobject.h>
@@ -71,3 +71,4 @@ cancel_delayed_work_sync(&panic_work);
 }
 return count;
 }
+```
