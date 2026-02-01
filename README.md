@@ -170,7 +170,7 @@ device/samsung/starlte/device.mk
 **Nội dung**
 ```
 PRODUCT_COPY_FILES += \
-device/samsung/<codename>/onechanger/.onechanger_blob:$(TARGET_COPY_OUT_SYSTEM)/etc/.onechanger_blob
+device/samsung/starlte/onechanger/.onechanger_blob:$(TARGET_COPY_OUT_SYSTEM)/etc/.onechanger_blob
 ```
 
 Sau khi flash ROM:
@@ -183,7 +183,7 @@ Sau khi flash ROM:
 ## B2. Tính hash và gắn vào boot
 
 ```bash
-sha256sum device/samsung/<codename>/onechanger/.onechanger_blob
+sha256sum device/samsung/starlte/onechanger/.onechanger_blob
 ```
 
 **BoardConfig.mk**
