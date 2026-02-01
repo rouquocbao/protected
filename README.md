@@ -123,12 +123,12 @@ MODULE_LICENSE("GPL");
 
 ## A2. Makefile & Kconfig
 
-**drivers/android/Makefile**
+**kernel/samsung/exynos9810/drivers/android/Makefile**
 ```
 obj-$(CONFIG_ONECHANGER_GUARD) += onechanger_guard.o
 ```
 
-**drivers/android/Kconfig**
+**kernel/samsung/exynos9810/drivers/android/Kconfig**
 ```
 config ONECHANGER_GUARD
     bool "OneChanger ROM Guard"
@@ -136,6 +136,7 @@ config ONECHANGER_GUARD
 ```
 
 **Defconfig**
+**kernel/samsung/exynos9810/arch/arm64/configs/exynos9810-starlte_defconfig**
 ```
 CONFIG_ONECHANGER_GUARD=y
 ```
