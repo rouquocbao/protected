@@ -18,15 +18,12 @@ Framework (SystemServer)
  └─ Nếu hợp lệ → ghi 1 vào sysfs ```
 
 
-
-
 ROM khác không có code framework → không ghi sysfs → kernel panic.
 
 PHẦN A — KERNEL: ONECHANGER GUARD
 A1. Tạo driver kernel
 Đường dẫn
-``` drivers/android/onechanger_guard.c
-```
+drivers/android/onechanger_guard.c
 
 
 Mã nguồn
