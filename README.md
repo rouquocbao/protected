@@ -1,318 +1,223 @@
-# OneChanger Guard – Hướng dẫn đầy đủ (Kernel → Framework)
+# OneChanger Kernel–Framework Guard (Anti Boot.img Reuse)
 
-**Mục tiêu:** `boot.img` chỉ hoạt động với ROM của bạn. Nếu boot.img được dùng với ROM khác (framework không hợp lệ), kernel sẽ panic sau **N giây**.
+## Mục tiêu
 
----
-
-## ⚠️ CẢNH BÁO QUAN TRỌNG
-
-- Kernel panic có rủi ro **bootloop cứng**
-- Khi test, luôn để **timeout dài (180–300s)**
-- Đảm bảo máy có **Recovery / Download Mode** để cứu
+- Đảm bảo **boot.img chỉ chạy được với ROM do chính bạn build**
+- Ngăn người khác lấy `boot.img` của bạn flash sang ROM khác
+- Không cần DRM mạnh, chỉ **chặn sử dụng sai mục đích**
+- Quyết định **nằm ở kernel**, framework chỉ xác nhận
 
 ---
 
-# 1️⃣ Kiến trúc tổng thể
+## Tổng quan kiến trúc
 
 ```
-Kernel (Guard)
- ├─ Tạo sysfs: /sys/kernel/onechanger/rom_ok
- ├─ Start timer (N giây)
- └─ Nếu rom_ok != 1 → panic()
+boot.img
+ └─ kernel (inject androidboot.onechanger_sig)
+     └─ /proc/cmdline
+         └─ androidboot.onechanger_sig=<SHA256>
 
-Framework (SystemServer)
- ├─ Chạy muộn khi Android đã lên
- ├─ Tính hash file bí mật trong /system
- ├─ So với hash từ boot (kernel)
- └─ Nếu hợp lệ → ghi 1 vào sysfs
+system.img
+ └─ /system/etc/.onechanger_blob   (file bí mật)
+
+framework
+ └─ đọc androidboot.onechanger_sig
+ └─ hash .onechanger_blob
+ └─ nếu khớp → ghi /sys/kernel/onechanger/rom_ok = 1
+
+kernel guard
+ └─ chờ timeout
+ └─ nếu rom_ok != 1 → panic / reboot
 ```
-
-ROM khác không có code framework → không ghi sysfs → kernel panic.
 
 ---
 
-# PHẦN A — KERNEL: ONECHANGER GUARD
+## PHẦN A — KERNEL GUARD DRIVER
 
-## A1. Tạo driver kernel
-
-**Đường dẫn**
+### A1. File driver
 
 ```
-drivers/android/onechanger_guard.c
+kernel/samsung/exynos9810/drivers/android/onechanger_guard.c
 ```
 
-**Mã nguồn**
+### A2. Chức năng
+
+- Tạo sysfs: `/sys/kernel/onechanger/rom_ok`
+- Mặc định `rom_ok = 0`
+- Sau `TIMEOUT_SEC`, nếu vẫn 0 → panic/reboot
+
+### A3. Code driver (rút gọn)
 
 ```c
 #include <linux/module.h>
+#include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
-#include <linux/workqueue.h>
-#include <linux/jiffies.h>
-#include <linux/panic.h>
-#include <linux/mutex.h>
+#include <linux/timer.h>
+#include <linux/reboot.h>
 
-#define ONECHANGER_TIMEOUT_SEC 180
+#define ONECHANGER_TIMEOUT_SEC 60
 
 static struct kobject *onechanger_kobj;
-static struct delayed_work panic_work;
-static bool rom_ok;
-static DEFINE_MUTEX(onechanger_lock);
-
-static void onechanger_panic_work(struct work_struct *work)
-{
-    bool ok;
-    mutex_lock(&onechanger_lock);
-    ok = rom_ok;
-    mutex_unlock(&onechanger_lock);
-
-    if (!ok)
-        panic("OneChangerGuard: ROM not authorized");
-}
+static int rom_ok;
+static struct timer_list guard_timer;
 
 static ssize_t rom_ok_show(struct kobject *kobj,
-                           struct kobj_attribute *attr,
-                           char *buf)
+                           struct kobj_attribute *attr, char *buf)
 {
-    bool ok;
-    mutex_lock(&onechanger_lock);
-    ok = rom_ok;
-    mutex_unlock(&onechanger_lock);
-    return scnprintf(buf, PAGE_SIZE, "%d\n", ok ? 1 : 0);
+    return sprintf(buf, "%d\n", rom_ok);
 }
 
 static ssize_t rom_ok_store(struct kobject *kobj,
                             struct kobj_attribute *attr,
                             const char *buf, size_t count)
 {
-    if (buf[0] == '1') {
-        mutex_lock(&onechanger_lock);
-        rom_ok = true;
-        mutex_unlock(&onechanger_lock);
-        cancel_delayed_work_sync(&panic_work);
-    }
+    if (buf[0] == '1') rom_ok = 1;
     return count;
 }
 
 static struct kobj_attribute rom_ok_attr =
     __ATTR(rom_ok, 0660, rom_ok_show, rom_ok_store);
 
+static void guard_timeout(struct timer_list *t)
+{
+    if (!rom_ok) panic("OneChanger guard");
+}
+
 static int __init onechanger_guard_init(void)
 {
-    int ret;
-
-    rom_ok = false;
-
     onechanger_kobj = kobject_create_and_add("onechanger", kernel_kobj);
-    if (!onechanger_kobj)
-        return -ENOMEM;
+    sysfs_create_file(onechanger_kobj, &rom_ok_attr.attr);
 
-    ret = sysfs_create_file(onechanger_kobj, &rom_ok_attr.attr);
-    if (ret) {
-        kobject_put(onechanger_kobj);
-        return ret;
-    }
-
-    INIT_DELAYED_WORK(&panic_work, onechanger_panic_work);
-    schedule_delayed_work(&panic_work, ONECHANGER_TIMEOUT_SEC * HZ);
-
-    pr_info("OneChangerGuard loaded, timeout=%ds\n", ONECHANGER_TIMEOUT_SEC);
+    timer_setup(&guard_timer, guard_timeout, 0);
+    mod_timer(&guard_timer, jiffies + ONECHANGER_TIMEOUT_SEC * HZ);
     return 0;
 }
 
 late_initcall(onechanger_guard_init);
-MODULE_LICENSE("GPL");
 ```
 
----
+### A4. Kconfig & Makefile
 
-## A2. Makefile & Kconfig
-
-**drivers/android/Makefile**
-```makefile
-obj-$(CONFIG_ONECHANGER_GUARD) += onechanger_guard.o
+`drivers/android/Kconfig`
 ```
-
-**drivers/android/Kconfig**
-```kconfig
 config ONECHANGER_GUARD
     bool "OneChanger ROM Guard"
     default y
 ```
 
-**Defconfig**
+`drivers/android/Makefile`
+```
+obj-$(CONFIG_ONECHANGER_GUARD) += onechanger_guard.o
+```
+
+Defconfig:
 ```
 CONFIG_ONECHANGER_GUARD=y
 ```
 
 ---
 
-## A3. Kiểm tra kernel
+## PHẦN B — INJECT androidboot.onechanger_sig TRONG KERNEL
 
-```bash
-adb shell ls /sys/kernel/onechanger
-adb shell cat /sys/kernel/onechanger/rom_ok
+⚠️ Bắt buộc cho Samsung Exynos
+
+### B1. File
+
+```
+arch/arm64/kernel/setup.c
+```
+
+### B2. Code inject
+
+```c
+#include <linux/string.h>
+
+#define ONECHANGER_SIG "<SHA256_HEX>"
+
+static void __init onechanger_inject_cmdline(void)
+{
+    const char *key = "androidboot.onechanger_sig=";
+
+    if (strstr(boot_command_line, key)) return;
+
+    if (strlen(boot_command_line) + strlen(key) +
+        strlen(ONECHANGER_SIG) + 2 >= COMMAND_LINE_SIZE) return;
+
+    strlcat(boot_command_line, " ", COMMAND_LINE_SIZE);
+    strlcat(boot_command_line, key, COMMAND_LINE_SIZE);
+    strlcat(boot_command_line, ONECHANGER_SIG, COMMAND_LINE_SIZE);
+}
+```
+
+Gọi trong `setup_arch()`:
+
+```c
+setup_machine_fdt(__fdt_pointer);
+onechanger_inject_cmdline();
+parse_early_param();
+```
+
+Kiểm tra:
+```
+cat /proc/cmdline | grep onechanger
 ```
 
 ---
 
-# PHẦN B — FILE BÍ MẬT TRONG SYSTEM
+## PHẦN C — SYSTEM FILE BÍ MẬT
 
-## B1. Tạo file bí mật khi build ROM
-
-```bash
-mkdir -p device/samsung/<codename>/onechanger
+Tạo file:
+```
 head -c 64 /dev/urandom > device/samsung/<codename>/onechanger/.onechanger_blob
 ```
 
-**Copy vào system image**
+Copy vào system:
 
-```makefile
+```make
 PRODUCT_COPY_FILES += \
-device/samsung/<codename>/onechanger/.onechanger_blob:$(TARGET_COPY_OUT_SYSTEM)/etc/.onechanger_blob
-```
-
-Sau khi flash ROM:
-
-```
-/system/etc/.onechanger_blob
+ device/samsung/<codename>/onechanger/.onechanger_blob:$(TARGET_COPY_OUT_SYSTEM)/etc/.onechanger_blob
 ```
 
 ---
 
-## B2. Tính hash và gắn vào boot
+## PHẦN D — FRAMEWORK AUTHORIZE
 
-```bash
-sha256sum device/samsung/<codename>/onechanger/.onechanger_blob
-```
-
-**BoardConfig.mk**
-```makefile
-BOARD_BOOTCONFIG += androidboot.onechanger_sig=<SHA256_HEX>
-```
-
-Runtime property:
-```
-ro.boot.onechanger_sig
-```
-
----
-
-# PHẦN C — FRAMEWORK (SystemServer)
-
-## C1. File cần patch
+### D1. File
 
 ```
 frameworks/base/services/java/com/android/server/SystemServer.java
 ```
 
-## C2. Import cần thêm
+### D2. Logic
 
-```java
-import android.os.SystemProperties;
-import android.util.Slog;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.security.MessageDigest;
-```
+- Đọc `androidboot.onechanger_sig`
+- Hash `/system/etc/.onechanger_blob`
+- Nếu khớp → ghi `/sys/kernel/onechanger/rom_ok`
 
----
-
-## C3. Helper & authorize logic
-
-```java
-private static final String TAG_OC = "OneChanger";
-private static final String OC_FILE = "/system/etc/.onechanger_blob";
-private static final String OC_EXPECT_PROP = "ro.boot.onechanger_sig";
-private static final String OC_SYSFS = "/sys/kernel/onechanger/rom_ok";
-
-private static String sha256File(String path) {
-    File f = new File(path);
-    if (!f.exists()) return "";
-    try (FileInputStream fis = new FileInputStream(f)) {
-        MessageDigest md = MessageDigest.getInstance("SHA-256");
-        byte[] buf = new byte[8192];
-        int r;
-        while ((r = fis.read(buf)) > 0) md.update(buf, 0, r);
-        byte[] d = md.digest();
-        StringBuilder sb = new StringBuilder(d.length * 2);
-        for (byte b : d) sb.append(String.format("%02x", b));
-        return sb.toString();
-    } catch (Throwable t) {
-        Slog.e(TAG_OC, "sha256 failed", t);
-        return "";
-    }
-}
-
-private static boolean writeSysfsOne(String path) {
-    try (FileOutputStream fos = new FileOutputStream(path)) {
-        fos.write('1');
-        fos.write('\n');
-        fos.flush();
-        return true;
-    } catch (Throwable t) {
-        Slog.e(TAG_OC, "write sysfs failed", t);
-        return false;
-    }
-}
-
-private void oneChangerAuthorizeIfValid() {
-    String expected = SystemProperties.get(OC_EXPECT_PROP, "");
-    String actual = sha256File(OC_FILE);
-
-    if (expected.isEmpty() || actual.isEmpty()) {
-        Slog.e(TAG_OC, "Missing hash");
-        return;
-    }
-
-    if (!expected.equalsIgnoreCase(actual)) {
-        Slog.e(TAG_OC, "Hash mismatch");
-        return;
-    }
-
-    writeSysfsOne(OC_SYSFS);
-}
-```
-
----
-
-## C4. Gọi authorize khi Android đã boot xong
+### D3. Gọi sớm
 
 ```java
 new Thread(() -> {
-    for (int i = 0; i < 180; i++) {
-        if ("1".equals(SystemProperties.get("sys.boot_completed", "0"))) break;
-        try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
-    }
+    try { Thread.sleep(25000); } catch (Exception ignored) {}
     oneChangerAuthorizeIfValid();
-}, "OneChangerAuth").start();
+}).start();
 ```
 
 ---
 
-# 4️⃣ Trình tự test an toàn
+## PHẦN E — TEST
 
-1. Set `ONECHANGER_TIMEOUT_SEC = 180` (kernel)  
-2. Build & flash ROM đầy đủ  
-3. Boot vào Android  
-
-**Kiểm tra:**
-
-```bash
-adb shell getprop ro.boot.onechanger_sig
-adb shell ls -l /system/etc/.onechanger_blob
-adb shell cat /sys/kernel/onechanger/rom_ok
-```
-
-ROM khác + boot.img của bạn → panic sau timeout.
+- Boot đúng ROM → không reboot
+- Boot.img gắn ROM khác → kernel panic sau timeout
 
 ---
 
-# 5️⃣ Lưu ý bảo mật & giới hạn
+## Ghi chú
 
-- Người có root có thể `echo 1 > rom_ok`
-- Có thể tăng cường bằng **SELinux / token**
-- Dev giỏi có thể rebuild kernel bỏ guard
-- Cơ chế này là **anti-reuse / anti-mix**, **không phải DRM tuyệt đối**
+- Không dùng `ro.boot.*`
+- Không dùng `BOARD_KERNEL_CMDLINE`
+- Không dùng `init.rc`
+- Kernel là điểm quyết định cuối
+
