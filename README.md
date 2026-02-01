@@ -46,7 +46,7 @@ drivers/android/onechanger_guard.c
 #include <linux/sysfs.h>
 #include <linux/workqueue.h>
 #include <linux/jiffies.h>
-#include <linux/panic.h>
+#include <linux/kernel.h>
 #include <linux/mutex.h>
 
 #define ONECHANGER_TIMEOUT_SEC 180
