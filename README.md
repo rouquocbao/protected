@@ -162,6 +162,10 @@ head -c 64 /dev/urandom > device/samsung/<codename>/onechanger/.onechanger_blob
 
 **Copy vào system image:**
 ```
+device/samsung/<codename>/device.mk
+```
+
+```
 PRODUCT_COPY_FILES += \
 device/samsung/<codename>/onechanger/.onechanger_blob:$(TARGET_COPY_OUT_SYSTEM)/etc/.onechanger_blob
 ```
