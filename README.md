@@ -143,7 +143,7 @@ CONFIG_ONECHANGER_GUARD=y
 
 ---
 
-## A3. Kiểm tra kernel
+## A3. Kiểm tra kernel (build xong kiểm tra)
 
 ```bash
 adb shell ls /sys/kernel/onechanger
@@ -161,11 +161,13 @@ mkdir -p device/samsung/starlte/onechanger
 head -c 64 /dev/urandom > device/samsung/starlte/onechanger/.onechanger_blob
 ```
 
-**Copy vào system image:**
+**Copy vào system image bằng cách:**
+** thêm nội dung vào file device.mk
 ```
 device/samsung/starlte/device.mk
 ```
 
+**Nội dung**
 ```
 PRODUCT_COPY_FILES += \
 device/samsung/<codename>/onechanger/.onechanger_blob:$(TARGET_COPY_OUT_SYSTEM)/etc/.onechanger_blob
