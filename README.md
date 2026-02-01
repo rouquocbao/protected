@@ -27,3 +27,69 @@ drivers/android/onechanger_guard.c
 
 
 Mã nguồn
+```c
+#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/kobject.h>
+#include <linux/sysfs.h>
+#include <linux/workqueue.h>
+#include <linux/jiffies.h>
+#include <linux/panic.h>
+#include <linux/mutex.h>
+#define ONECHANGER_TIMEOUT_SEC 180
+static struct kobject *onechanger_kobj;
+static struct delayed_work panic_work;
+static bool rom_ok;
+static DEFINE_MUTEX(onechanger_lock);
+static void onechanger_panic_work(struct work_struct *work)
+{
+bool ok;
+mutex_lock(&onechanger_lock);
+ok = rom_ok;
+mutex_unlock(&onechanger_lock);
+if (!ok)
+panic("OneChangerGuard: ROM not authorized");
+}
+static ssize_t rom_ok_show(struct kobject *kobj,
+struct kobj_attribute *attr,
+char *buf)
+{
+bool ok;
+mutex_lock(&onechanger_lock);
+ok = rom_ok;
+mutex_unlock(&onechanger_lock);
+return scnprintf(buf, PAGE_SIZE, "%d\n", ok ? 1 : 0);
+}
+static ssize_t rom_ok_store(struct kobject *kobj,
+struct kobj_attribute *attr,
+const char *buf, size_t count)
+{
+if (buf[0] == '1') {
+mutex_lock(&onechanger_lock);
+rom_ok = true;
+mutex_unlock(&onechanger_lock);
+cancel_delayed_work_sync(&panic_work);
+}
+return count;
+}
+static struct kobj_attribute rom_ok_attr =
+__ATTR(rom_ok, 0660, rom_ok_show, rom_ok_store);
+static int __init onechanger_guard_init(void)
+{
+int ret;
+rom_ok = false;
+onechanger_kobj = kobject_create_and_add("onechanger", kernel_kobj);
+if (!onechanger_kobj)
+return -ENOMEM;
+ret = sysfs_create_file(onechanger_kobj, &rom_ok_attr.attr);
+if (ret) {
+kobject_put(onechanger_kobj);
+return ret;
+}
+INIT_DELAYED_WORK(&panic_work, onechanger_panic_work);
+schedule_delayed_work(&panic_work, ONECHANGER_TIMEOUT_SEC * HZ);
+pr_info("OneChangerGuard loaded, timeout=%ds\n", ONECHANGER_TIMEOUT_SEC);
+return 0;
+}
+late_initcall(onechanger_guard_init);
+MODULE_LICENSE("GPL");
