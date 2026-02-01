@@ -35,7 +35,7 @@ ROM khác không có code framework → không ghi sysfs → kernel panic.
 
 **Đường dẫn**
 ```
-drivers/android/onechanger_guard.c
+kernel/samsung/exynos9810/drivers/android/onechanger_guard.c
 ```
 
 **Mã nguồn**
