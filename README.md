@@ -15,8 +15,7 @@ Framework (SystemServer)
  ├─ Chạy muộn khi Android đã lên
  ├─ Tính hash file bí mật trong /system
  ├─ So với hash từ boot (kernel)
- └─ Nếu hợp lệ → ghi 1 vào sysfs
-]``
+ └─ Nếu hợp lệ → ghi 1 vào sysfs ```
 
 ROM khác không có code framework → không ghi sysfs → kernel panic.
 
