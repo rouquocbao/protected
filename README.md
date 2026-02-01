@@ -129,14 +129,22 @@ obj-$(CONFIG_ONECHANGER_GUARD) += onechanger_guard.o
 ```
 
 **kernel/samsung/exynos9810/drivers/android/Kconfig**
+**thêm trước dòng endif # if ANDROID dưới cùng**
 ```
+# ======= ONECHANGER GUARD =======
+
 config ONECHANGER_GUARD
     bool "OneChanger ROM Guard"
+    depends on ANDROID
     default y
+    help
+      Panic kernel if the ROM does not authorize itself within a timeout.
+      Used to prevent booting this kernel on unauthorized ROMs.	 
 ```
 
 **Defconfig**
 **kernel/samsung/exynos9810/arch/arm64/configs/exynos9810-starlte_defconfig**
+**thêm vào cuối**
 ```
 CONFIG_ONECHANGER_GUARD=y
 ```
