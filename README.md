@@ -157,13 +157,13 @@ adb shell cat /sys/kernel/onechanger/rom_ok
 ## B1. Tạo file bí mật khi build ROM
 
 ```bash
-mkdir -p device/samsung/<codename>/onechanger
-head -c 64 /dev/urandom > device/samsung/<codename>/onechanger/.onechanger_blob
+mkdir -p device/samsung/starlte/onechanger
+head -c 64 /dev/urandom > device/samsung/starlte/onechanger/.onechanger_blob
 ```
 
 **Copy vào system image:**
 ```
-device/samsung/<codename>/device.mk
+device/samsung/starlte/device.mk
 ```
 
 ```
