@@ -6,7 +6,7 @@ Mục tiêu: boot.img chỉ hoạt động với ROM của bạn. Nếu boot.img
 timeout dài (180–300s). - Đảm bảo máy có Recovery / Download Mode để cứu.
 
 1. Kiến trúc tổng thể
-```[
+```
 Kernel (Guard)
  ├─ Tạo sysfs: /sys/kernel/onechanger/rom_ok
  ├─ Start timer (N giây)
